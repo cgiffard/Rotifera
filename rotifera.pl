@@ -15,34 +15,62 @@ my %MetadataClean;
 my $CurrentPropertyName;
 my $CurrentPropertyValue;
 
+##### Command line options
+our $RTFFilePath				= pop(@{[grep(!/^\-/,@ARGV)]});				# The RTF Filename!
+our $Option_ValidateSchema		= scalar(grep(/\-schema/, @ARGV)) > 0;		# Determines whether a schema validation ocurrs
+our $Option_OutputJSON			= scalar(grep(/\-json/, @ARGV)) > 0;		# Determines whether JSON is output
+our $Option_OutputTable			= scalar(grep(/\-printtable/, @ARGV)) > 0;	# Determines whether a table of output is printed
+our $Option_Silent				= scalar(grep(/\-silent/, @ARGV)) > 0;		# Silent operation (won't warn or error about anything)
+our $Option_DieIfSchemaFailed	= scalar(grep(/\-die/, @ARGV)) > 0;			# Die on schema errors
+#####
+
+sub printUsage {
+	if (!$Option_Silent && interactive()) {
+		print blue()."Usage: ".creset().white().$0.creset()." [options] filename\n";
+		print blue()."Available options:".creset()."\n";
+		print "\t-schema      Validates against the supplied schema in schema.pl.\n";
+		print "\t-json        Outputs the gathered metadata in JSON format.\n";
+		print "\t-printtable  Pretty-prints a table with the gathered metadata.\n";
+		print "\t-silent      Suppresses all informational and warning messages, displaying only extreme fatal errors.\n";
+		print "\t-die         Cancels execution on first schema or data extraction error.\n\n";
+	}
+}
+
 use constant NOT_EXPECTING => 0;
 use constant EXPECTING_PROPERTYNAME => 1;
 use constant EXPECTING_VALUE => 2;
 
-require "tokeniser.pl";	# Reads RTF files, converts to parse tree (hopefully) without breaking!
-require "schema.pl";	# Schema for checking metadata values
+my @RotiferaDirectory = split(/[\/\\]+/g,$0); pop(@RotiferaDirectory);
+my $RotiferaDirectory = join("/",@RotiferaDirectory);
+
+require $RotiferaDirectory."/tokeniser.pl";	# Reads RTF files, converts to parse tree (hopefully) without breaking!
+require $RotiferaDirectory."/schema.pl";	# Schema for checking metadata values
 
 ### Colours!!!
 # Shamelessly ripped off the homebrew install script http://mxcl.github.com/homebrew/
-sub interactive		{	return -t STDIN && -t STDOUT;				}
-sub blue			{	return bold(34)				if interactive;	}
-sub white			{	return bold(39)				if interactive;	}
-sub red				{	return underline(31)		if interactive;	}
-sub creset			{	return escape(0)			if interactive;	}
-sub bold			{	return escape("1;".$_[0])	if interactive;	}
-sub underline		{	return escape("4;".$_[0])	if interactive;	}
-sub escape			{	return "\033[".$_[0]."m"	if interactive;	}
+sub interactive		{	return -t STDIN && -t STDOUT;									}
+sub blue			{	return bold(34)				if interactive && !$Option_Silent;	}
+sub white			{	return bold(39)				if interactive && !$Option_Silent;	}
+sub red				{	return underline(31)		if interactive && !$Option_Silent;	}
+sub creset			{	return escape(0)			if interactive && !$Option_Silent;	}
+sub bold			{	return escape("1;".$_[0])	if interactive && !$Option_Silent;	}
+sub underline		{	return escape("4;".$_[0])	if interactive && !$Option_Silent;	}
+sub escape			{	return "\033[".$_[0]."m"	if interactive && !$Option_Silent;	}
 
 sub fatal {
-	print STDERR red()."FATAL: ".$_[0].creset()."\n";
+	print STDERR red()."FATAL: ".$_[0].creset()."\n" if !$Option_Silent;
 }
 
 sub warning {
-	print STDERR red()."WARNING:".creset()." ".$_[0]."\n";
+	print STDERR red()."WARNING:".creset()." ".$_[0]."\n" if !$Option_Silent;
+	
+	if ($Option_DieIfSchemaFailed) {
+		die(red()."FATAL:".creset()." Dying on schema failure!\n");
+	}
 }
 
 sub info {
-	print blue()."INFO:".creset()." ".$_[0]."\n";
+	print blue()."INFO:".creset()." ".$_[0]."\n" if !$Option_Silent;
 }
 
 sub trim {
@@ -194,107 +222,112 @@ sub printTable {
 	print blue()."└"."─"x($LongestKeyString)."┴"."─"x($LongestValueString)."┘\n".creset()."\n\n";	
 }
 
-
-if (length(@ARGV)) {
-	info("Opening file ".$ARGV[0]);
-	
-	if (open(RTFDATA,$ARGV[0])) {
-		binmode RTFDATA;
+if (scalar(@ARGV) > 0 || length($RTFFilePath) > 0) {
+	if (-e $RTFFilePath) {
+		info("Opening file ".$RTFFilePath);
 		
-		info("Done. Extracting Metadata...");
-		while (read(RTFDATA, $FileBuffer, 512)) {
-			$FileData .= $FileBuffer;
-		};
-		close(RTFDATA);
+		if (open(RTFDATA,$RTFFilePath)) {
+			binmode RTFDATA;
 		
-		## Tokenise & Scan for Metadata...
-		tokeniser::go($FileData);
-		push(@MetadataUnclean,
-				@{$tokeniser::DOCPROPERTYFields},
-				@{$tokeniser::UserProps},
-				@{$tokeniser::DocInfo}
-			);
+			info("Done. Extracting Metadata...");
+			while (read(RTFDATA, $FileBuffer, 512)) {
+				$FileData .= $FileBuffer;
+			};
+			close(RTFDATA);
 		
-		foreach my $Property (@MetadataUnclean) {
-			my $CurrentPropertyName = %{$Property}->{"name"};
-			my $CurrentPropertyValue = %{$Property}->{"value"};
-			my $DuplicateKeyFound = 0;
-			my $DuplicateValueFound = 0;
+			## Tokenise & Scan for Metadata...
+			tokeniser::go($FileData);
+			push(@MetadataUnclean,
+					@{$tokeniser::DOCPROPERTYFields},
+					@{$tokeniser::UserProps},
+					@{$tokeniser::DocInfo}
+				);
+		
+			foreach my $Property (@MetadataUnclean) {
+				my $CurrentPropertyName = %{$Property}->{"name"};
+				my $CurrentPropertyValue = %{$Property}->{"value"};
+				my $DuplicateKeyFound = 0;
+				my $DuplicateValueFound = 0;
 			
-			if (defined $MetadataClean{$CurrentPropertyName}) {
-				warning("Duplicate metadata key ".white().$CurrentPropertyName.creset()." discovered in document.");
-			}
-			
-			if (exists $schema::rules{$CurrentPropertyName}) {
-				$schema::rules{$CurrentPropertyName}->{"found"} = 1;
-			} elsif (exists $schema::rules{homogeniseKeyName($CurrentPropertyName)}) {
-				warning("Metadata key ".white().$CurrentPropertyName.creset()." was not found in the schema. It was automatically corrected to ".white().homogeniseKeyName($CurrentPropertyName).creset().".");
-				$CurrentPropertyName = homogeniseKeyName($CurrentPropertyName);
-				$MetadataClean{$CurrentPropertyName} = "";
-				$schema::rules{$CurrentPropertyName}->{"found"} = 1;
-			} else {
-				warning("Metadata key ".white().$CurrentPropertyName.creset()." was not found in the schema.");
-			}
-			
-			if (ref($MetadataClean{$CurrentPropertyName}) eq "ARRAY") {
-				$DuplicateKeyFound = 1;
-				my @TmpValueArray = @{$MetadataClean{$CurrentPropertyName}};
-				
-				foreach my $CurrentValue (@TmpValueArray) {
-					if ($CurrentValue eq trim($CurrentPropertyValue)) {
-						$DuplicateValueFound = 1;
-					}
+				if (defined $MetadataClean{$CurrentPropertyName}) {
+					warning("Duplicate metadata key ".white().$CurrentPropertyName.creset()." discovered in document.");
 				}
-				
-				if (!$DuplicateValueFound) {
-					checkValueAgainstSchema($CurrentPropertyName,trim($CurrentPropertyValue));
-					push(@TmpValueArray,trim($CurrentPropertyValue));
-					$MetadataClean{$CurrentPropertyName} = \@TmpValueArray;
+			
+				if (exists $schema::rules{$CurrentPropertyName}) {
+					$schema::rules{$CurrentPropertyName}->{"found"} = 1;
+				} elsif (exists $schema::rules{homogeniseKeyName($CurrentPropertyName)}) {
+					warning("Metadata key ".white().$CurrentPropertyName.creset()." was not found in the schema. It was automatically corrected to ".white().homogeniseKeyName($CurrentPropertyName).creset().".");
+					$CurrentPropertyName = homogeniseKeyName($CurrentPropertyName);
+					$MetadataClean{$CurrentPropertyName} = "";
+					$schema::rules{$CurrentPropertyName}->{"found"} = 1;
+				} else {
+					warning("Metadata key ".white().$CurrentPropertyName.creset()." was not found in the schema.");
 				}
-			} else {
-				checkValueAgainstSchema($CurrentPropertyName,trim($CurrentPropertyValue));
-				
-				if (length($MetadataClean{$CurrentPropertyName}) > 0) {
+			
+				if (ref($MetadataClean{$CurrentPropertyName}) eq "ARRAY") {
 					$DuplicateKeyFound = 1;
-					if (trim($CurrentPropertyValue) ne $MetadataClean{$CurrentPropertyName}) {
-						my @TmpValueArray = ($MetadataClean{$CurrentPropertyName},trim($CurrentPropertyValue));
+					my @TmpValueArray = @{$MetadataClean{$CurrentPropertyName}};
+				
+					foreach my $CurrentValue (@TmpValueArray) {
+						if ($CurrentValue eq trim($CurrentPropertyValue)) {
+							$DuplicateValueFound = 1;
+						}
+					}
+				
+					if (!$DuplicateValueFound) {
+						checkValueAgainstSchema($CurrentPropertyName,trim($CurrentPropertyValue));
+						push(@TmpValueArray,trim($CurrentPropertyValue));
 						$MetadataClean{$CurrentPropertyName} = \@TmpValueArray;
-					} else {
-						$DuplicateValueFound = 1;
 					}
 				} else {
-					$MetadataClean{$CurrentPropertyName} = trim($CurrentPropertyValue);
+					checkValueAgainstSchema($CurrentPropertyName,trim($CurrentPropertyValue));
+				
+					if (length($MetadataClean{$CurrentPropertyName}) > 0) {
+						$DuplicateKeyFound = 1;
+						if (trim($CurrentPropertyValue) ne $MetadataClean{$CurrentPropertyName}) {
+							my @TmpValueArray = ($MetadataClean{$CurrentPropertyName},trim($CurrentPropertyValue));
+							$MetadataClean{$CurrentPropertyName} = \@TmpValueArray;
+						} else {
+							$DuplicateValueFound = 1;
+						}
+					} else {
+						$MetadataClean{$CurrentPropertyName} = trim($CurrentPropertyValue);
+					}
+				}
+			
+				if ($DuplicateKeyFound) {
+					if (!$DuplicateValueFound) {
+						warning("\tThe duplicate metadata key ".white().$CurrentPropertyName.creset()." contains a new unrecognised value.");
+					} else {
+						info("\t\tThe duplicate metadata key ".white().$CurrentPropertyName.creset()." contains the same value as one or more of its predecessors.");
+					}
+				}
+			
+				$CurrentPropertyName = "";
+			}
+		
+			info("Processed document to find ".scalar(keys(%MetadataClean))." valid metadata pairs.");
+		
+			for my $CurrentKey (keys %{$schema::rules}) {
+				my %CurrentRuleset = %{$schema::rules{$CurrentKey}};
+			
+				if ($CurrentRuleset{"mandatory"} && !$CurrentRuleset{"found"}) {
+					warning("The mandatory metadata key ".blue().$CurrentKey.creset()." was not found in the document!");
 				}
 			}
-			
-			if ($DuplicateKeyFound) {
-				if (!$DuplicateValueFound) {
-					warning("\tThe duplicate metadata key ".white().$CurrentPropertyName.creset()." contains a new unrecognised value.");
-				} else {
-					info("\t\tThe duplicate metadata key ".white().$CurrentPropertyName.creset()." contains the same value as one or more of its predecessors.");
-				}
-			}
-			
-			$CurrentPropertyName = "";
+		
+			printTable(\%MetadataClean) if $Option_OutputTable;
+			info("JSON Object:") if $Option_OutputJSON && !$Option_Silent;
+			print encode_json(\%MetadataClean)."\n\n" if $Option_OutputJSON;
+		} else {
+			fatal("Failed to Open File!");
+			exit 1;
 		}
-		
-		info("Processed document to find ".scalar(keys(%MetadataClean))." valid metadata pairs.");
-		
-		for my $CurrentKey (keys %{$schema::rules}) {
-			my %CurrentRuleset = %{$schema::rules{$CurrentKey}};
-			
-			if ($CurrentRuleset{"mandatory"} && !$CurrentRuleset{"found"}) {
-				warning("The mandatory metadata key ".blue().$CurrentKey.creset()." was not found in the document!");
-			}
-		}
-		
-		printTable(\%MetadataClean);
-		print "\n\n";
-		info("JSON Object:");
-		print encode_json(\%MetadataClean);
-		print "\n\n";
 	} else {
-		fatal("Failed to Open File!");
-		exit 1;
+		fatal("The specified file does not exist!");
+		printUsage();
 	}
+} else {
+	fatal("No arguments supplied!");
+	printUsage();
 }
