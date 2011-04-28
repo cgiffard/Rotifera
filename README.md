@@ -14,6 +14,16 @@ It will soon also extract:
 
 Rotifera will validate your documents against a schema which you can extend to include your own corporate or personal metadata, and supports required data, allowed values, datatypes etc. Apart from JSON.pm it has no dependencies.
 
+# Screenshot(s)
+
+Take one pinch of RTF file with metadata:
+
+<img src="http://www.cgiffard.com/github/rotifera/RTFMetadataInput.png" width="600" height="500" alt="Picture of metadata being entered into example RTF file with TextEdit.app">
+
+Rotiferise until golden brown:
+
+<img src="http://www.cgiffard.com/github/rotifera/RotiferaOutput.png" width="899" height="366" alt="Screenshot of Rotifera's output after processing the example RTF file.">
+
 # Using Rotifera
 
 It doesn't get simpler than this:
