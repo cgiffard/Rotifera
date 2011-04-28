@@ -5,6 +5,19 @@ package schema;
 
 our %rules = (
 	
+	# RTF Info Fields
+	"Author"                   			 => { "mandatory" => 0,	"type"	=> "text",														},
+	"Operator"                 			 => { "mandatory" => 0,	"type"	=> "text",														},
+	"RTF Create Time"          			 => { "mandatory" => 0,	"type"	=> "date",														},
+	"RTF Revision Time"        			 => { "mandatory" => 0,	"type"	=> "date",														},
+	"Version" 			       			 => { "mandatory" => 0,	"type"	=> "text",														},
+	"Editing Time In Minutes"  			 => { "mandatory" => 0,	"type"	=> "int",														},
+	"Number of Pages"          			 => { "mandatory" => 0,	"type"	=> "int",														},
+	"Number of Words"          			 => { "mandatory" => 0,	"type"	=> "int",														},
+	"Number of Characters"     			 => { "mandatory" => 0,	"type"	=> "int",														},
+	"Number of Characters With Spaces"   => { "mandatory" => 0,	"type"	=> "int",														},
+	"RTF Version Number" 				 => { "mandatory" => 0,	"type"	=> "int",														},
+	
 	# Single Value Fields
 	
 	"Title"                     => { "mandatory" => 1,	"type"	=> "text",														},

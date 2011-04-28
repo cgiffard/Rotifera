@@ -8,7 +8,6 @@ use strict;
 
 package tokeniser;
 
-our @TMPTokens;
 use constant NOT_EXPECTING => 0;
 use constant EXPECTING_PROPERTYNAME => 1;
 use constant EXPECTING_VALUE => 2;
@@ -18,6 +17,11 @@ sub go {
 	my @TokenStack;
 	my $ByteOffset = 0;
 	my $Buffer = "";
+	my @TMPTokens;
+	our @DocInfo = ();
+	our @UserProps = ();
+	our @DocpropertyFields = ();
+	our @Hyperlinks = ();
 	
 	### Initial Document Parse
 	if ($RTFData && length($RTFData) > 50) { # A reasonable expectation...
@@ -61,11 +65,6 @@ sub go {
 	} else {
 		die("Couldn't tokenise provided data!");
 	}
-	
-	my @DocInfo;
-	my @UserProps;
-	my @DocpropertyFields;
-	my @Hyperlinks;
 	
 	sub processUserProperties {
 		if (ref($_[0]) eq "ARRAY") {
@@ -126,6 +125,90 @@ sub go {
 		}
 	}
 	
+	sub processDocumentInformation {
+		if (ref($_[0]) eq "ARRAY") {
+			my @TokenArray = @{$_[0]};
+			my %DocInfoTokens = (
+				"title"		=> "Title",
+				"subject"	=> "Subject",
+				"author"	=> "Author",
+				"manager"	=> "Manager",
+				"company"	=> "Company",
+				"operator"	=> "Operator",
+				"category"	=> "Category",
+				"keywords"	=> "Keywords",
+				"comment"	=> "Comment",
+				"doccomm"	=> "Document Comments",
+				"hlinkbase"	=> "Hyperlink Base",
+				"creatim"	=> "RTF Create Time",
+				"revtim"	=> "RTF Revision Time",
+				"printim"	=> "RTF Print Time",
+				"buptim"	=> "RTF Backup Time",
+				"time"		=> "RTF Time",
+				"vern"		=> "RTF Version Number",
+				"edmins"	=> "Editing Time In Minutes",
+				"yr"		=> "Year",
+				"mo"		=> "Month",
+				"dy"		=> "Day",
+				"hr"		=> "Hour",
+				"min"		=> "Min",
+				"sec"		=> "Sec",
+				"nofpages"	=> "Number of Pages",
+				"nofchars"	=> "Number of Characters",
+				"nofcharsws"=> "Number of Characters With Spaces",
+				"nofwords"	=> "Number of Words",
+				"version"	=> "Version",
+				"id"		=> "RTF ID"
+			);
+		
+			if ($TokenArray[0]  eq "\\info") {
+				for my $DocumentInfoKey (@TokenArray) {
+					if (ref($DocumentInfoKey) eq "ARRAY") {
+						my @DocumentInfoKey = @{$DocumentInfoKey};
+						my $DocumentInfoKeyName = $DocumentInfoKey[0];
+						my $DocumentInfoKeyValue = "";
+						$DocumentInfoKeyName =~ s/^\\//;
+						chomp $DocumentInfoKeyName;
+					
+						if (scalar(@DocumentInfoKey) == 1 && $DocumentInfoKeyName =~ m/\d/g) {
+							my @KeyParts = split(/(\d+)/g,$DocumentInfoKeyName);
+							$DocumentInfoKeyName = shift(@KeyParts);
+							push(@DocumentInfoKey,@KeyParts);
+						}
+						
+						if (exists $DocInfoTokens{$DocumentInfoKeyName}) {
+							$DocumentInfoKeyName = $DocInfoTokens{$DocumentInfoKeyName};
+						}
+					
+						if (scalar(@DocumentInfoKey) <= 1) {
+							# If, after preprocessing for values which appear as part of the key name as a pair (like \edmins3,)
+							# we still only have one (or no) items, we'll set this to undef.
+							$DocumentInfoKeyValue = undef;
+						} elsif (scalar(@DocumentInfoKey) == 2) {
+							$DocumentInfoKeyValue = $DocumentInfoKey[1];
+						} else {
+							# To do: be bothered to use native date functions & parse properly accounting for different formats,
+							# timezone etc.
+							my $YearValue		= join("",split(/^\\yr/,shift(@{[grep(/^\\yr/,@DocumentInfoKey)]})));
+							my $MonthValue		= join("",split(/^\\mo/,shift(@{[grep(/^\\mo/,@DocumentInfoKey)]})));
+							my $DayValue		= join("",split(/^\\dy/,shift(@{[grep(/^\\dy/,@DocumentInfoKey)]})));
+							my $HoursValue		= join("",split(/^\\hr/,shift(@{[grep(/^\\hr/,@DocumentInfoKey)]})));
+							my $MinutesValue	= join("",split(/^\\min/,shift(@{[grep(/^\\min/,@DocumentInfoKey)]})));
+							my $SecondsValue	= join("",split(/^\\sec/,shift(@{[grep(/^\\sec/,@DocumentInfoKey)]})));
+						
+							$DocumentInfoKeyValue = $DayValue."/".$MonthValue."/".$YearValue." ".$HoursValue.":".$MinutesValue;
+						}
+					
+						push(@DocInfo, {
+							"name"	=> $DocumentInfoKeyName,
+							"value"	=> $DocumentInfoKeyValue
+						});
+					}
+				};
+			}
+		}
+	}
+	
 	sub processTokens {
 		my @TokenArray = @{$_[0]};
 		for my $TokenItem (@TokenArray) {
@@ -154,81 +237,7 @@ sub go {
 				processUserProperties(\@TokenArray);
 				return;
 			} elsif ($TokenItem eq "\\info") {
-				my %DocInfoTokens = (
-					"title"		=> "Title",
-					"subject"	=> "Subject",
-					"author"	=> "Author",
-					"manager"	=> "Manager",
-					"company"	=> "Company",
-					"operator"	=> "Operator",
-					"category"	=> "Category",
-					"keywords"	=> "Keywords",
-					"comment"	=> "Comment",
-					"doccomm"	=> "Document Comments",
-					"hlinkbase"	=> "Hyperlink Base",
-					"creatim"	=> "RTF Create Time",
-					"revtim"	=> "RTF Revision Time",
-					"printim"	=> "RTF Print Time",
-					"buptim"	=> "RTF Backup Time",
-					"time"		=> "RTF Time",
-					"vern"		=> "RTF Version Number",
-					"edmins"	=> "Editing Time In Minutes",
-					"yr"		=> "Year",
-					"mo"		=> "Month",
-					"dy"		=> "Day",
-					"hr"		=> "Hour",
-					"min"		=> "Min",
-					"sec"		=> "Sec",
-					"nofpages"	=> "Number of Pages",
-					"nofchars"	=> "Number of Characters",
-					"nofcharsws"=> "Number of Characters With Spaces",
-					"nofwords"	=> "Number of Words",
-					"version"	=> "Version",
-					"id"		=> "RTF ID"
-				);
-				
-				if ($TokenArray[0]  eq "\\info") {
-					for my $DocumentInfoKey (@TokenArray) {
-						if (ref($DocumentInfoKey) eq "ARRAY") {
-							my @DocumentInfoKey = @{$DocumentInfoKey};
-							my $DocumentInfoKeyName = $DocumentInfoKey[0];
-							my $DocumentInfoKeyValue = "";
-							$DocumentInfoKeyName =~ s/^\\//;
-							chomp $DocumentInfoKeyName;
-							
-							if (scalar(@DocumentInfoKey) == 1) {
-								my @KeyParts = split(/(\d+)/g,$DocumentInfoKeyName);
-								$DocumentInfoKeyName = shift(@KeyParts);
-								push(@DocumentInfoKey,@KeyParts);
-							}
-								
-							if (exists $DocInfoTokens{$DocumentInfoKeyName}) {
-								$DocumentInfoKeyName = $DocInfoTokens{$DocumentInfoKeyName};
-							}
-							
-							if (scalar(@DocumentInfoKey) == 2) {
-								$DocumentInfoKeyValue = $DocumentInfoKey[1];
-							} else {
-								# To do: be bothered to use native date functions & parse properly accounting for different formats,
-								# timezone etc.
-								my $YearValue		= join("",split(/^\\yr/,shift(@{[grep(/^\\yr/,@DocumentInfoKey)]})));
-								my $MonthValue		= join("",split(/^\\mo/,shift(@{[grep(/^\\mo/,@DocumentInfoKey)]})));
-								my $DayValue		= join("",split(/^\\dy/,shift(@{[grep(/^\\dy/,@DocumentInfoKey)]})));
-								my $HoursValue		= join("",split(/^\\hr/,shift(@{[grep(/^\\hr/,@DocumentInfoKey)]})));
-								my $MinutesValue	= join("",split(/^\\min/,shift(@{[grep(/^\\min/,@DocumentInfoKey)]})));
-								my $SecondsValue	= join("",split(/^\\sec/,shift(@{[grep(/^\\sec/,@DocumentInfoKey)]})));
-								
-								$DocumentInfoKeyValue = $DayValue."/".$MonthValue."/".$YearValue." ".$HoursValue.":".$MinutesValue;
-							}
-							
-							push(@DocInfo, {
-								"name"	=> $DocumentInfoKeyName,
-								"value"	=> $DocumentInfoKeyValue
-							});
-						}
-					};
-				}
-				
+				processDocumentInformation(\@TokenArray);
 				return;
 			} else {
 				if (ref($TokenItem) eq "ARRAY") {
