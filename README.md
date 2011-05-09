@@ -55,6 +55,12 @@ Rotifera has a bunch of options you can use to have loads of fun:
 * `-listfaileddocs`
 	
 	Lists all the documents which failed schema validation/metadata extraction after processing.
+* `-version`
+	
+	Outputs the current Rotifera version.
+* `-help`
+	
+	Displays usage information.
 	
 Combine these options for hilarious effects:
 
