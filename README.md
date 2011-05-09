@@ -64,17 +64,21 @@ Rotifera has a bunch of options you can use to have loads of fun:
 	
 Combine these options for hilarious effects:
 
-	./rotifera.pl -printtable -json -schema mydoc.rtf docs/*.rtf
+```sh
+./rotifera.pl -printtable -json -schema mydoc.rtf docs/*.rtf
+```
 
 Alternately, you can use the very limited API:
 
-	require "tokeniser.pl";
-	$tokeniser::go($RTFData); # The tokeniser won't read the files for you. You'll need to do that yourself!
-	
-	# Voila! Metadata!
-	$tokeniser::DOCPROPERTYFields;
-	$tokeniser::UserProps;
-	$tokeniser::DocInfo;
+```perl
+require "tokeniser.pl";
+$tokeniser::go($RTFData); # The tokeniser won't read the files for you. You'll need to do that yourself!
+
+# Voila! Metadata!
+$tokeniser::DOCPROPERTYFields;
+$tokeniser::UserProps;
+$tokeniser::DocInfo;
+```
 	
 You can find schema editing instructions in the schema file itself.
 
