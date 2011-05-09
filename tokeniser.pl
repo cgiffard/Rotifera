@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# Rotifera 0.1
+# Rotifera 0.2
 # Christopher Giffard, 2011.
 # http://www.github.com/cgiffard/Rotifera
 
@@ -29,7 +29,7 @@ sub go {
 			if (substr($RTFData,$ByteOffset,1) eq "{") {
 				if (scalar(@TokenStack) > 0) {
 					my @TmpTokens = split(/\s*(\\[^\s\\]+|\\{2}\*\s+MERGEFORMAT)\s*/ig,$Buffer);
-					@TmpTokens = grep(/[a-z0-9\/\.\;]/i,@TmpTokens);
+					@TmpTokens = processTokensForEncodedCharacters([grep(/[a-z0-9\/\.\;\']/i,@TmpTokens)]);
 					
 					if (scalar(@TmpTokens)) {
 						push(@{$TokenStack[scalar(@TokenStack)-1]},@TmpTokens);
@@ -41,7 +41,7 @@ sub go {
 			} elsif (substr($RTFData,$ByteOffset,1) eq "}") {
 				if (scalar(@TokenStack) > 0) {
 					my @TmpTokens = split(/\s*(\\[^\s\\]+|\\{2}\*\s+MERGEFORMAT)\s*/ig,$Buffer);
-					@TmpTokens = grep(/[a-z0-9\/\.\;]/i,@TmpTokens);
+					@TmpTokens = processTokensForEncodedCharacters([grep(/[a-z0-9\/\.\;\']/i,@TmpTokens)]);
 					
 					if (scalar(@TmpTokens)) {
 						push(@{$TokenStack[scalar(@TokenStack)-1]},@TmpTokens);
@@ -91,10 +91,8 @@ sub go {
 					if ($CurrentPropertyType > 0) {
 						if (ref($PropertyKey) eq "ARRAY") {
 							if ((@{$PropertyKey})[0] eq "\\staticval") {
-								$CurrentPropertyValue = (@{$PropertyKey})[1];
-								if ($CurrentPropertyValue != 30) {
-									$CurrentPropertyValue =~ s/[\n\r]//ig;
-								}
+								$CurrentPropertyValue = getTextForToken($PropertyKey);
+								$CurrentPropertyValue =~ s/[\n\r]//ig;
 								
 								push(@UserProps,{
 									"name" => $CurrentPropertyName,
@@ -187,18 +185,23 @@ sub go {
 						} elsif (scalar(@DocumentInfoKey) == 2) {
 							$DocumentInfoKeyValue = $DocumentInfoKey[1];
 						} else {
-							# To do: be bothered to use native date functions & parse properly accounting for different formats,
-							# timezone etc.
-							my $YearValue		= join("",split(/^\\yr/,shift(@{[grep(/^\\yr/,@DocumentInfoKey)]})));
-							my $MonthValue		= join("",split(/^\\mo/,shift(@{[grep(/^\\mo/,@DocumentInfoKey)]})));
-							my $DayValue		= join("",split(/^\\dy/,shift(@{[grep(/^\\dy/,@DocumentInfoKey)]})));
-							my $HoursValue		= join("",split(/^\\hr/,shift(@{[grep(/^\\hr/,@DocumentInfoKey)]})));
-							my $MinutesValue	= join("",split(/^\\min/,shift(@{[grep(/^\\min/,@DocumentInfoKey)]})));
-							my $SecondsValue	= join("",split(/^\\sec/,shift(@{[grep(/^\\sec/,@DocumentInfoKey)]})));
+							# Check if this is a date...
+							if (grep(/^\\(yr|mo|dy|hr|min|sec)/i,@DocumentInfoKey)) {
+								# To do: be bothered to use native date functions & parse properly accounting for different formats,
+								# timezone etc.
+								my $YearValue		= join("",split(/^\\yr/,shift(@{[grep(/^\\yr/,@DocumentInfoKey)]})));
+								my $MonthValue		= join("",split(/^\\mo/,shift(@{[grep(/^\\mo/,@DocumentInfoKey)]})));
+								my $DayValue		= join("",split(/^\\dy/,shift(@{[grep(/^\\dy/,@DocumentInfoKey)]})));
+								my $HoursValue		= join("",split(/^\\hr/,shift(@{[grep(/^\\hr/,@DocumentInfoKey)]})));
+								my $MinutesValue	= join("",split(/^\\min/,shift(@{[grep(/^\\min/,@DocumentInfoKey)]})));
+								my $SecondsValue	= join("",split(/^\\sec/,shift(@{[grep(/^\\sec/,@DocumentInfoKey)]})));
 						
-							$DocumentInfoKeyValue = $DayValue."/".$MonthValue."/".$YearValue." ".$HoursValue.":".$MinutesValue;
+								$DocumentInfoKeyValue = $DayValue."/".$MonthValue."/".$YearValue." ".$HoursValue.":".$MinutesValue;
+							} else {
+								$DocumentInfoKeyValue = getTextForToken(\@DocumentInfoKey);
+							}
 						}
-					
+						
 						push(@DocInfo, {
 							"name"	=> $DocumentInfoKeyName,
 							"value"	=> $DocumentInfoKeyValue
@@ -268,6 +271,42 @@ sub getTextForToken {
 	
 	@TmpInternalList = grep(!/^\\/,@TmpInternalList);
 	return join("",@TmpInternalList);
+}
+
+sub processTokensForEncodedCharacters {
+	my @TmpTokens = @{$_[0]};
+	my @ProcessedTokens;
+	for (0 ... scalar(@TmpTokens)) {
+		if ($TmpTokens[$_] =~ m/^\\\'/i) {
+			my $HexToken = substr($TmpTokens[$_],2,2);
+			my $RestOfToken = substr($TmpTokens[$_],4);
+			
+			if (hex($HexToken) > 31) {
+				$HexToken = pack("H*",$HexToken);
+			} else {
+				$HexToken = " ";
+			}
+			
+			$TmpTokens[$_] = $HexToken.$RestOfToken;
+			
+			if ($ProcessedTokens[scalar(@ProcessedTokens)-1] =~ m/^\\/ || ref($ProcessedTokens[scalar(@ProcessedTokens)-1]) eq "ARRAY") {
+				push(@ProcessedTokens,$TmpTokens[$_]);
+			} else {
+				$ProcessedTokens[scalar(@ProcessedTokens)-1] .= $TmpTokens[$_];
+			}
+		} else {
+			if ($ProcessedTokens[scalar(@ProcessedTokens)-1] =~ m/^\\/ || ref($ProcessedTokens[scalar(@ProcessedTokens)-1]) eq "ARRAY" || !scalar(@ProcessedTokens)) {
+				push(@ProcessedTokens,$TmpTokens[$_]);
+			} else {
+				$ProcessedTokens[scalar(@ProcessedTokens)-1] .= $TmpTokens[$_];
+			}
+		}
+	}
+	
+	# return @ProcessedTokens; # Commented out due to extensive bugs and limited time, but eventually, this is the better method.
+	# The 'better method' above combines strings at the tokeniser layer, removing the bizzarre fragmentation of strings even when not
+	# separated by control words or other tokens.
+	return @TmpTokens;
 }
 
 ################################## END

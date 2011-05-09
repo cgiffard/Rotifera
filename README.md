@@ -11,6 +11,7 @@ It will soon also extract:
 * Bookmarks
 * Linked Values (provided I can find some test files which actually do this!)
 * List of Hyperlinks
+* Pictures
 
 Rotifera will validate your documents against a schema which you can extend to include your own corporate or personal metadata, and supports required data, allowed values, datatypes etc. Apart from JSON.pm it has no dependencies.
 

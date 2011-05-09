@@ -1,11 +1,13 @@
 #!/usr/bin/perl
 
-# Rotifera 0.1
+# Rotifera 0.2
 # Christopher Giffard, 2011.
 # http://www.github.com/cgiffard/Rotifera
 
 use strict;
 use JSON;
+
+push(@INC,"./");
 
 my $FileData;
 my $FileBuffer;
@@ -14,6 +16,7 @@ my %MetadataClean;
 my $CurrentPropertyName;
 my $CurrentPropertyValue;
 my @FailedDocuments;
+my $Version = "0.2";
 
 ##### Command line options
 our @RTFFiles					= @{[grep(!/^\-/,@ARGV)]};						# The RTF Filename!
@@ -24,6 +27,8 @@ our $Option_Silent				= scalar(grep(/\-silent/, @ARGV)) > 0;			# Silent operatio
 our $Option_DieIfSchemaFailed	= scalar(grep(/\-die/, @ARGV)) > 0;				# Die on schema errors
 our $Option_NoColour			= scalar(grep(/\-nocolour/, @ARGV)) > 0;		# Don't display colours
 our $Option_ListFailedDocs		= scalar(grep(/\-listfaileddocs/, @ARGV)) > 0;	# List documents which failed schema validation
+our $Option_PrintVersion		= scalar(grep(/\-version/, @ARGV)) > 0;			# Prints Rotifera version and exits
+our $Option_PrintUsage			= scalar(grep(/\-help/, @ARGV)) > 0;			# Prints Rotifera usage/help and exits
 #####
 
 sub printUsage {
@@ -36,7 +41,9 @@ sub printUsage {
 		print "\t-silent            Suppresses all informational and warning messages, displaying only extreme fatal errors.\n";
 		print "\t-die               Cancels execution on first schema or data extraction error.\n";
 		print "\t-nocolour          Outputs as plain text with no colour instructions.\n";
-		print "\t-listfaileddocs    Lists all the documents which failed schema validation/metadata extraction after processing.\n\n";
+		print "\t-listfaileddocs    Lists all the documents which failed schema validation/metadata extraction after processing.\n";
+		print "\t-version           Prints Rotifera version and exits.\n";
+		print "\t-help              Prints this usage information and exits.\n\n";
 	}
 }
 
@@ -234,7 +241,24 @@ sub printTable {
 	print blue()."└"."─"x($LongestKeyString)."┴"."─"x($LongestValueString)."┘\n".creset()."\n\n";	
 }
 
-if (scalar(@ARGV) > 0 || count(@RTFFiles) > 0) {
+
+
+##################### END SUPPORT FUNCTIONS
+
+##################### BEGIN PROGRAM MAIN
+
+
+if ($Option_PrintVersion) {
+	print "Rotifera ".$Version."\n";
+	print "Christopher Giffard, 2011\n\n";
+}
+
+if ($Option_PrintUsage) {
+	printUsage();
+	exit(0);
+}
+
+if (scalar(@ARGV) > 0 || scalar(@RTFFiles) > 0) {
 	info("Processing ".scalar(@RTFFiles)." files.") if (scalar(@RTFFiles) > 1);
 	
 	foreach my $RTFFilePath (@RTFFiles) {
@@ -245,10 +269,10 @@ if (scalar(@ARGV) > 0 || count(@RTFFiles) > 0) {
 		
 		if (-e $RTFFilePath) {
 			info("Opening file ".$RTFFilePath);
-		
+			
 			if (open(RTFDATA,$RTFFilePath)) {
 				binmode RTFDATA;
-		
+				
 				info("Done. Extracting Metadata...");
 				while (read(RTFDATA, $FileBuffer, 512)) {
 					$FileData .= $FileBuffer;
@@ -273,19 +297,23 @@ if (scalar(@ARGV) > 0 || count(@RTFFiles) > 0) {
 					my $CurrentPropertyValue = %{$Property}->{"value"};
 					my $DuplicateKeyFound = 0;
 					my $DuplicateValueFound = 0;
-			
+					
 					if (defined $MetadataClean{$CurrentPropertyName}) {
 						warning("Duplicate metadata key ".white().$CurrentPropertyName.creset()." discovered in document.");
 						$DocumentFailedValidation = 1;
 					}
 			
 					if (exists $schema::rules{$CurrentPropertyName}) {
-						$schema::rules{$CurrentPropertyName}->{"found"} = 1;
+						if (length(trim($CurrentPropertyValue)) > 0) {
+							$schema::rules{$CurrentPropertyName}->{"found"} = 1;
+						}
 					} elsif (exists $schema::rules{homogeniseKeyName($CurrentPropertyName)}) {
 						warning("Metadata key ".white().$CurrentPropertyName.creset()." was not found in the schema. It was automatically corrected to ".white().homogeniseKeyName($CurrentPropertyName).creset().".");
 						$CurrentPropertyName = homogeniseKeyName($CurrentPropertyName);
 						$MetadataClean{$CurrentPropertyName} = "";
-						$schema::rules{$CurrentPropertyName}->{"found"} = 1;
+						if (length(trim($CurrentPropertyValue)) > 0) {
+							$schema::rules{$CurrentPropertyName}->{"found"} = 1;
+						}
 						$DocumentFailedValidation = 1;
 					} else {
 						warning("Metadata key ".white().$CurrentPropertyName.creset()." was not found in the schema.");
